@@ -1,0 +1,23 @@
+apiVersion: extensions/v1beta1
+kind: Job
+metadata:
+  name: jenkins-scaler
+  labels:
+    name: jenkins
+    role: scaler
+spec:
+  selector:
+    matchLabels:
+      name: jenkins
+      role: scaler
+  template:
+    metadata:
+      name: jenkins-scaler
+      labels:
+        name: jenkins
+        role: scaler
+    spec:
+      containers:
+      - name: jenkins-scaler
+        image: quay.io/aleks_saul/jenkins-scaler:v0.1        
+      restartPolicy: OnFailure
