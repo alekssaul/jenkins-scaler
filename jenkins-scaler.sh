@@ -14,25 +14,32 @@ function auto_scale_down {
 	# detect and delete idle pods
 	JENKINSPODSTOKILL=($(curl -s -k -m 10  $JENKINSURL/computer/api/json | jq '.computer[] | select (.numExecutors | contains (1)) | select(.idle == true) | .displayName'))
 	JENKINSPODSTOKILLCOUNT=$(curl -s -k -m 10  $JENKINSURL/computer/api/json | jq '.computer[] | select (.numExecutors | contains (1)) | select(.idle == true) | .displayName' | grep -c '')
-	JENKINSWORKERCOUNT=$(curl -s -k -m 10  $JENKINSURL/computer/api/json | jq '.computer[] | select (.numExecutors | contains (1)) | select(.idle == false) | .displayName' | grep -c '')
+	
+	{
+		JENKINSWORKERCOUNT=$(curl -s -k -m 10  $JENKINSURL/computer/api/json | jq '.computer[] | select (.numExecutors | contains (1)) | select(.idle == false) | .displayName' | grep -c '')
+	} || { 
+		JENKINSWORKERCOUNT="0" 
+	}	
 
 	if [ $(expr $JENKINS_BUILDERSCOUNT - $JENKINSPODSTOKILLCOUNT) -lt $(expr $JENKINSWORKERCOUNT + $JENKINSEXTRABUILDERS ) ]; then
 		# don't kill them all		
 		killlimit=$(expr $JENKINS_BUILDERSCOUNT - $JENKINSWORKERCOUNT - $JENKINSEXTRABUILDERS )
+		if [ $killlimit -gt $(expr $JENKINS_BUILDERSCOUNT - $JENKINSMINNUMBUILDERS) ]; then 
+			killlimit=$(expr $JENKINS_BUILDERSCOUNT - $JENKINSMINNUMBUILDERS)
+		fi
 	else 
 		killlimit=$JENKINSPODSTOKILLCOUNT
 	fi
 
-
 	echo `date` - Will kill $killlimit idle pods 
 	killcounter=0
-	for pod in "${JENKINSPODSTOKILL[@]}"; do
+	for pod in "${JENKINSPODSTOKILL[@]}"; do		
 		realpod=$(echo $pod | sed 's/.\(.*\)/\1/' | sed 's/\(.*\)./\1/'	)			
-		realpodname=$(curl -s -k -m 10 -d "script=println InetAddress.localHost.hostName" $JENKINSURL/computer/$realpod/scriptText)								
+		realpodname=${realpod%-*}										
 		if [ $killcounter -lt $killlimit ]; then														
 			kubectl --namespace=$JENKINSNAMESPACE delete pod $realpodname --now
 		fi
-		killcounter=$(($killcounter + 1))	
+		killcounter=$(($killcounter + 1))
 	done 
 
 	newscale=$(expr $JENKINS_BUILDERSCOUNT - $killlimit)
@@ -81,7 +88,8 @@ function query_jenkins {
 			echo `date` - No action needed			
 		elif [ "$JENKINSIDLENODESCOUNT" -eq "$JENKINSEXTRABUILDERS" ]; then
 			echo `date` - No action needed
-		else 
+		elif [ $JENKINS_BUILDERSCOUNT ]; then
+			echo `date` - Looking to scale down
 			auto_scale_down
 		fi
 	fi
